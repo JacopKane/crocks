@@ -1,13 +1,13 @@
 const test = require('tape')
 const sinon = require('sinon')
+
 const MockCrock = require('../test/MockCrock')
 const helpers = require('../test/helpers')
+const laws = require('../test/laws')
 
 const bindFunc = helpers.bindFunc
 
-const curry = require('../core/curry')
-const compose = curry(require('../core/compose'))
-const isArray = require('../core/isArray')
+const equals = require('../core/equals')
 const isFunction = require('../core/isFunction')
 const isObject = require('../core/isObject')
 const isSameType = require('../core/isSameType')
@@ -131,14 +131,35 @@ test('Identity equals functionality', t => {
 test('Identity equals properties (Setoid)', t => {
   const a = Identity({ a: 45 })
   const b = Identity({ a: 45 })
-  const c = Identity({ a: 45, b: 'ken' })
-  const d = Identity({ a: 45 })
+  const c = Identity({ a: 45 })
+  const d = Identity({ a: 45, b: 'ken' })
+
+  const equals = laws.Setoid('equals')
 
   t.ok(isFunction(Identity(0).equals), 'provides an equals function')
-  t.equal(a.equals(a), true, 'reflexivity')
-  t.equal(a.equals(b), b.equals(a), 'symmetry (equal)')
-  t.equal(a.equals(c), c.equals(a), 'symmetry (!equal)')
-  t.equal(a.equals(b) && b.equals(d), a.equals(d), 'transitivity')
+
+  t.ok(equals.reflexivity(a), 'reflexivity')
+  t.ok(equals.symmetry(a, b), 'symmetry (equal)')
+  t.ok(equals.symmetry(a, d), 'symmetry (!equal)')
+  t.ok(equals.transitivity(a, b, c), 'transitivity (equal)')
+  t.ok(equals.transitivity(a, d, c), 'transitivity (!equal)')
+
+  t.end()
+})
+
+test('Identity fantasy-land equals properties (Setoid)', t => {
+  const a = Identity({ a: 45 })
+  const b = Identity({ a: 45 })
+  const c = Identity({ a: 45 })
+  const d = Identity({ a: 45, b: 'ken' })
+
+  const equals = laws.Setoid(fl.equals)
+
+  t.ok(equals.reflexivity(a), 'reflexivity')
+  t.ok(equals.symmetry(a, b), 'symmetry (equal)')
+  t.ok(equals.symmetry(a, d), 'symmetry (!equal)')
+  t.ok(equals.transitivity(a, b, c), 'transitivity (equal)')
+  t.ok(equals.transitivity(a, d, c), 'transitivity (!equal)')
 
   t.end()
 })
@@ -234,20 +255,27 @@ test('Identity concat functionality', t => {
 })
 
 test('Identity concat properties (Semigroup)', t => {
-  const extract =
-    m => m.valueOf()
-
   const a = Identity([ 'a' ])
   const b = Identity([ 'b' ])
   const c = Identity([ 'c' ])
 
-  const left = a.concat(b).concat(c)
-  const right = a.concat(b.concat(c))
+  const concat = laws.Semigroup('concat')
 
   t.ok(isFunction(a.concat), 'provides a concat function')
 
-  t.same(extract(left), extract(right), 'associativity')
-  t.ok(isArray(extract(a.concat(b))), 'returns an Array')
+  t.ok(concat.associativity(equals, a, b, c), 'associativity')
+
+  t.end()
+})
+
+test('Identity fantasy-land concat properties (Semigroup)', t => {
+  const a = Identity([ 'a' ])
+  const b = Identity([ 'b' ])
+  const c = Identity([ 'c' ])
+
+  const concat = laws.Semigroup(fl.concat)
+
+  t.ok(concat.associativity(equals, a, b, c), 'associativity')
 
   t.end()
 })
@@ -311,10 +339,26 @@ test('Identity map properties (Functor)', t => {
   const f = x => x + 54
   const g = x => x * 4
 
+  const map = laws.Functor('map')
+
   t.ok(isFunction(m.map), 'provides a map function')
 
-  t.equal(m.map(identity).valueOf(), m.valueOf(), 'identity')
-  t.equal(m.map(compose(f, g)).valueOf(), m.map(g).map(f).valueOf(), 'composition')
+  t.ok(map.identity(equals, m), 'identity')
+  t.ok(map.composition(equals, f, g, m), 'composition')
+
+  t.end()
+})
+
+test('Identity map fantasy-land properties (Functor)', t => {
+  const m = Identity(49)
+
+  const f = x => x + 54
+  const g = x => x * 4
+
+  const map = laws.Functor(fl.map)
+
+  t.ok(map.identity(equals, m), 'identity')
+  t.ok(map.composition(equals, f, g, m), 'composition')
 
   t.end()
 })
@@ -352,15 +396,16 @@ test('Identity ap errors', t => {
 })
 
 test('Identity ap properties (Apply)', t => {
-  const m = Identity(identity)
+  const f = Identity(x => x + 33)
+  const g = Identity(x => x * 3)
+  const v = Identity(333)
 
-  const a = m.map(compose).ap(m).ap(m)
-  const b = m.ap(m.ap(m))
+  const ap = laws.Apply('ap', 'map')
 
-  t.ok(isFunction(Identity(0).map), 'implements the Functor spec')
-  t.ok(isFunction(Identity(0).ap), 'provides an ap function')
+  t.ok(isFunction(v.map), 'implements the Functor spec')
+  t.ok(isFunction(v.ap), 'provides an ap function')
 
-  t.equal(a.ap(Identity(3)).valueOf(), b.ap(Identity(3)).valueOf(), 'composition')
+  t.ok(ap.composition(equals, g, f, v), 'composition')
 
   t.end()
 })
@@ -437,16 +482,28 @@ test('Identity chain fantasy-land errors', t => {
 })
 
 test('Identity chain properties (Chain)', t => {
-  t.ok(isFunction(Identity(0).chain), 'provides a chain function')
-  t.ok(isFunction(Identity(0).ap), 'implements the Apply spec')
-
   const f = x => Identity(x + 2)
-  const g = x => Identity(x + 10)
+  const g = x => Identity(x * 10)
+  const v = Identity(7)
 
-  const a = x => Identity(x).chain(f).chain(g)
-  const b = x => Identity(x).chain(y => f(y).chain(g))
+  const chain = laws.Chain('chain')
 
-  t.equal(a(10).valueOf(), b(10).valueOf(), 'assosiativity')
+  t.ok(isFunction(v.chain), 'provides a chain function')
+  t.ok(isFunction(v.ap), 'implements the Apply spec')
+
+  t.ok(chain.associativity(equals, f, g, v), 'associativity')
+
+  t.end()
+})
+
+test('Identity fantasy-land chain properties (Chain)', t => {
+  const f = x => Identity(x + 2)
+  const g = x => Identity(x * 10)
+  const v = Identity(7)
+
+  const chain = laws.Chain(fl.chain)
+
+  t.ok(chain.associativity(equals, f, g, v), 'associativity')
 
   t.end()
 })

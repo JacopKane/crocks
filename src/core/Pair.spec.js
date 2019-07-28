@@ -1,13 +1,13 @@
 const test = require('tape')
 const sinon = require('sinon')
 const helpers = require('../test/helpers')
+const laws = require('../test/laws')
 
 const bindFunc = helpers.bindFunc
 
 const MockCrock = require('../test/MockCrock')
 
-const curry = require('./curry')
-const compose = curry(require('./compose'))
+const equals = require('./equals')
 const isFunction = require('./isFunction')
 const isObject = require('./isObject')
 const isSameType = require('./isSameType')
@@ -179,15 +179,35 @@ test('Pair equals functionality', t => {
 test('Pair equals properties (Setoid)', t => {
   const a = Pair(0, 'like')
   const b = Pair(0, 'like')
-  const c = Pair(1, 'rainbow')
-  const d = Pair(0, 'dislike')
+  const c = Pair(0, 'like')
+  const d = Pair('rainbow', 1)
+
+  const equals = laws.Setoid('equals')
 
   t.ok(isFunction(Pair(0, 0).equals), 'provides an equals function')
 
-  t.equal(a.equals(a), true, 'reflexivity')
-  t.equal(a.equals(b), b.equals(a), 'symmetry (equal)')
-  t.equal(a.equals(c), c.equals(a), 'symmetry (!equal)')
-  t.equal(a.equals(b) && b.equals(d), a.equals(d), 'transitivity')
+  t.ok(equals.reflexivity(a), 'reflexivity')
+  t.ok(equals.symmetry(a, b), 'symmetry (equal)')
+  t.ok(equals.symmetry(a, d), 'symmetry (!equal)')
+  t.ok(equals.transitivity(a, b, c), 'transitivity (equal)')
+  t.ok(equals.transitivity(a, d, c), 'transitivity (!equal)')
+
+  t.end()
+})
+
+test('Pair fantasy-land equals properties (Setoid)', t => {
+  const a = Pair(0, 'like')
+  const b = Pair(0, 'like')
+  const c = Pair(0, 'like')
+  const d = Pair('rainbow', 1)
+
+  const equals = laws.Setoid(fl.equals)
+
+  t.ok(equals.reflexivity(a), 'reflexivity')
+  t.ok(equals.symmetry(a, b), 'symmetry (equal)')
+  t.ok(equals.symmetry(a, d), 'symmetry (!equal)')
+  t.ok(equals.transitivity(a, b, c), 'transitivity (equal)')
+  t.ok(equals.transitivity(a, d, c), 'transitivity (!equal)')
 
   t.end()
 })
@@ -231,20 +251,26 @@ test('Pair concat functionality', t => {
 })
 
 test('Pair concat properties (Semigroup)', t => {
-  const extract =
-    merge((x, y) => [ x, y ])
-
   const a = Pair([ 1 ], '1')
   const b = Pair([ 2 ], '2')
   const c = Pair([ 3 ], '3')
 
-  const left = a.concat(b).concat(c)
-  const right = a.concat(b.concat(c))
+  const concat = laws.Semigroup('concat')
 
-  t.ok(isFunction(Pair(0, 0).concat), 'is a function')
+  t.ok(isFunction(a.concat), 'provides a concat function')
+  t.ok(concat.associativity(equals, a, b, c), 'associativity')
 
-  t.same(extract(left), extract(right), 'associativity')
-  t.equal(a.concat(b).type(), a.type(), 'returns Semigroup of the same type')
+  t.end()
+})
+
+test('Pair fantasy-land concat properties (Semigroup)', t => {
+  const a = Pair([ 1 ], '1')
+  const b = Pair([ 2 ], '2')
+  const c = Pair([ 3 ], '3')
+
+  const concat = laws.Semigroup(fl.concat)
+
+  t.ok(concat.associativity(equals, a, b, c), 'associativity')
 
   t.end()
 })
@@ -334,21 +360,27 @@ test('Pair map functionality', t => {
 })
 
 test('Pair map properties (Functor)', t => {
-  const extract =
-    merge((x, y) => [ x, y ])
-
   const f = x => x + 2
   const g = x => x * 2
 
+  const map = laws.Functor('map')
+
   t.ok(isFunction(Pair(0, 0).map), 'provides a map function')
 
-  t.same(extract(Pair(0, 45).map(identity)), [ 0, 45 ], 'identity')
+  t.ok(map.identity(equals, Pair(0, 45)), 'identity')
+  t.ok(map.composition(equals, f, g, Pair('nice', 5)), 'composition')
 
-  t.same(
-    extract(Pair(50, 22).map(x => f(g(x)))),
-    extract(Pair(50, 22).map(g).map(f)),
-    'composition'
-  )
+  t.end()
+})
+
+test('Pair fantasy-land map properties (Functor)', t => {
+  const f = x => x + 2
+  const g = x => x * 2
+
+  const map = laws.Functor(fl.map)
+
+  t.ok(map.identity(equals, Pair(0, 45)), 'identity')
+  t.ok(map.composition(equals, f, g, Pair('nice', 5)), 'composition')
 
   t.end()
 })
@@ -505,22 +537,16 @@ test('Pair ap errors', t => {
 })
 
 test('Pair ap properties (Apply)', t => {
-  const extract =
-    merge((x, y) => [ x, y ])
+  const f = Pair([ 'f' ], x => x + 10)
+  const g = Pair([ 'g' ], x => x * 100)
+  const v = Pair([ 'v' ], 45)
 
-  const m = Pair([ 'm' ], identity)
+  const ap = laws.Apply('ap', 'map')
 
-  const a = m.map(compose).ap(m).ap(m)
-  const b = m.ap(m.ap(m))
+  t.ok(isFunction(v.ap), 'provides an ap function')
+  t.ok(isFunction(v.map), 'implements the Functor spec')
 
-  t.ok(isFunction(Pair(0, 0).ap), 'provides an ap function')
-  t.ok(isFunction(Pair(0, 0).map), 'implements the Functor spec')
-
-  t.same(
-    extract(a.ap(Pair([ 'n' ], 3))),
-    extract(b.ap(Pair([ 'n' ], 3))),
-    'composition'
-  )
+  t.ok(ap.composition(equals, g, f, v), 'composition')
 
   t.end()
 })
@@ -588,19 +614,28 @@ test('Pair chain fantasy-land errors', t => {
 })
 
 test('Pair chain properties (Chain)', t => {
-  const extract =
-    merge((x, y) => [ x, y ])
+  const f = x => Pair([ 'f' ], x * 2)
+  const g = x => Pair([ 'g' ], x + 10)
+  const v = Pair([ 'v' ], 60)
+
+  const chain = laws.Chain('chain')
 
   t.ok(isFunction(Pair([], 0).chain), 'provides a chain function')
   t.ok(isFunction(Pair([], 0).ap), 'implements the Apply spec')
 
-  const f = x => Pair([ 'f' ], x + 2)
+  t.ok(chain.associativity(equals, f, g, v), 'associativity')
+
+  t.end()
+})
+
+test('Pair fantasy-land chain properties (Chain)', t => {
+  const f = x => Pair([ 'f' ], x * 2)
   const g = x => Pair([ 'g' ], x + 10)
+  const v = Pair([ 'v' ], 60)
 
-  const a = x => Pair([ 'a' ], x).chain(f).chain(g)
-  const b = x => Pair([ 'a' ], x).chain(y => f(y).chain(g))
+  const chain = laws.Chain(fl.chain)
 
-  t.same(extract(a(10)), extract(b(10)), 'assosiativity')
+  t.ok(chain.associativity(equals, f, g, v), 'associativity')
 
   t.end()
 })
